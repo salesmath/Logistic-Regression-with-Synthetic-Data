@@ -1,0 +1,142 @@
+# For entertainment purposes only.
+# This program will analyze the quality of a TensorFlow prediction by generating
+# synthetic data.
+
+import tensorflow as tf
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate synthetic data.
+
+N = 100
+
+# Zeros form a Gaussian centered at (-1, -1)
+
+x_zeros = np.random.multivariate_normal(
+    mean=np.array((-1, -1)), cov=.1*np.eye(2), size=(N//2,))
+
+y_zeros = np.zeros((N//2,))
+
+# Ones form a Gaussian centered at (1, 1)
+
+x_ones = np.random.multivariate_normal(
+    mean=np.array((1, 1)), cov=.1*np.eye(2), size=(N//2,))
+
+y_ones = np.ones((N//2,))
+
+x_np = np.vstack([x_zeros, x_ones])
+
+y_np = np.concatenate([y_zeros, y_ones])
+
+df = x_zeros, x_ones
+
+plt.plot(x_zeros)
+plt.plot(x_ones)
+plt.show()
+
+tf.compat.v1.disable_eager_execution()
+
+with tf.name_scope("placeholders"):
+    x = tf.compat.v1.placeholder(tf.float32, (N, 2))
+    y = tf.compat.v1.placeholder(tf.float32, (N,))
+
+with tf.name_scope("weights"):
+    W = tf.Variable(tf.random.normal((2, 1)))
+    b = tf.Variable(tf.random.normal((1,)))
+
+with tf.name_scope("prediction"):
+    y_logit = tf.squeeze(tf.matmul(x, W) + b)
+    # the sigmoid gives the class probability of 1
+    y_one_prob = tf.sigmoid(y_logit)
+    # Rounding P(y=1) will give the correct prediction.
+    y_pred = tf.round(y_one_prob)
+
+with tf.name_scope("loss"):
+    # Compute the cross-entropy term for each datapoint
+    entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_logit, labels=y)
+    # Sum all contributions
+    l = tf.reduce_sum(entropy)
+
+with tf.name_scope("optim"):
+    train_op = tf.compat.v1.train.AdamOptimizer(.01).minimize(l)
+
+with tf.name_scope("summaries"):
+    tf.summary.scalar("loss", l)
+    merged = tf.summary.merge_all()
+
+train_writer = tf.summary.FileWriter('logistic-train', tf.get_default_graph())
+
+seed = 23
+np.random.seed(seed)
+tf.set_random_seed(seed)
+
+train_set = np.random.choice(len(X), round(len(X) * 0.4), replace=False)
+
+test_set = np.array(list(set(range(len(X))) - set(train_set)))
+train_X = X[train_set]
+train_y = y[train_set]
+test_X = X[test_set]
+test_y = y[test_set]
+
+def min_max_normalized(data):
+    col_max = np.max(data, axis=0)
+    col_min = np.min(data, axis=0)
+    return np.divide(data - col_min, col_max - col_min)
+
+train_X = min_max_normalized(train_X)
+test_X = min_max_normalized(test_X)
+
+A = tf.Variable(tf.random_normal(shape=[4, 1]))
+b = tf.Variable(tf.random_normal(shape=[1, 1]))
+init = tf.global_variables_initializer()
+sess = tf.Session()
+sess.run(init)
+
+data = tf.placeholder(dtype=tf.float32, shape=[None, 4])
+target = tf.placeholder(dtype=tf.float32, shape=[None, 1])
+
+mod = tf.matmul(data, A) + b
+
+loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=mod, labels=target))
+
+learning_rate = 0.003
+batch_size = 30
+epoch_iter = 50
+
+opt = tf.train.GradientDescentOptimizer(learning_rate)
+
+goal = opt.minimize(loss)
+
+prediction = tf.round(tf.sigmoid(mod))
+correct = tf.cast(tf.equal(prediction, target), dtype=tf.float32)
+accuracy = tf.reduce_mean(correct)
+
+loss_trace = []
+train_acc = []
+test_acc = []
+
+for epoch in range(epoch_iter):
+    # Generate random batch index
+    batch_index = np.random.choice(len(train_X), size=batch_size)
+    batch_train_X = train_X[batch_index]
+    batch_train_y = np.matrix(train_y[batch_index]).T
+    sess.run(goal, feed_dict={data: batch_train_X, target: batch_train_y})
+    temp_loss = sess.run(loss, feed_dict={data: batch_train_X, target: batch_train_y})
+    # convert into a matrix, and the shape of the placeholder to correspond
+    temp_train_acc = sess.run(accuracy, feed_dict={data: train_X, target: np.matrix(train_y).T})
+    temp_test_acc = sess.run(accuracy, feed_dict={data: test_X, target: np.matrix(test_y).T})
+    # recode the result
+    loss_trace.append(temp_loss)
+    train_acc.append(temp_train_acc)
+    test_acc.append(temp_test_acc)
+    # output
+    if (epoch + 1) % 300 == 0:
+        print('epoch: {:4d} loss: {:5f} train_acc: {:5f} test_acc: {:5f}'.format(epoch + 1, temp_loss,
+                                                                          temp_train_acc, temp_test_acc))
+
+plt.plot(loss_trace)
+plt.title('Cross Entropy Loss')
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.show()
